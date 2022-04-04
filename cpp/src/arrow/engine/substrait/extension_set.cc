@@ -59,11 +59,11 @@ struct IdHashEq {
 // that situation we do not have a set of anchor values already defined so we keep
 // a map of what Ids we have seen.
 struct ExtensionSet::Impl {
-  void AddUri(util::string_view uri, ExtensionSet* self) {
+  void AddUri(Id id, util::string_view uri, ExtensionSet* self) {
     if (uris_.find(uri) != uris_.end()) return;
 
-    self->uris_.push_back(uri);
-    uris_.insert(self->uris_.back());  // lookup helper's keys should reference memory
+    self->uris_[id]=uri;
+    uris_.insert(self->uris_[id]);  // lookup helper's keys should reference memory
                                        // owned by this ExtensionSet
   }
 
@@ -78,7 +78,7 @@ struct ExtensionSet::Impl {
   uint32_t EncodeType(ExtensionIdRegistry::TypeRecord type_record, ExtensionSet* self) {
     // note: at this point we're guaranteed to have an Id which points to memory owned by
     // the set's registry.
-    AddUri(type_record.id.uri, self);
+    AddUri(type_record.id,type_record.id.uri, self);
     auto it_success =
         types_.emplace(type_record.id, static_cast<uint32_t>(types_.size()));
 
@@ -93,7 +93,7 @@ struct ExtensionSet::Impl {
   uint32_t EncodeFunction(Id id, util::string_view function_name, ExtensionSet* self) {
     // note: at this point we're guaranteed to have an Id which points to memory owned by
     // the set's registry.
-    AddUri(id.uri, self);
+    AddUri(id, id.uri, self);
     auto it_success = functions_.emplace(id, static_cast<uint32_t>(functions_.size()));
 
     if (it_success.second) {
@@ -110,7 +110,7 @@ struct ExtensionSet::Impl {
 ExtensionSet::ExtensionSet(ExtensionIdRegistry* registry)
     : registry_(registry), impl_(new Impl(), [](Impl* impl) { delete impl; }) {}
 
-Result<ExtensionSet> ExtensionSet::Make(std::vector<util::string_view> uris,
+Result<ExtensionSet> ExtensionSet::Make(std::unordered_map<Id, util::string_view> uris,
                                         std::vector<Id> type_ids,
                                         std::vector<bool> type_is_variation,
                                         std::vector<Id> function_ids,
@@ -121,18 +121,18 @@ Result<ExtensionSet> ExtensionSet::Make(std::vector<util::string_view> uris,
   // TODO(bkietz) move this into the registry as registry->OwnUris(&uris) or so
   std::unordered_set<util::string_view, ::arrow::internal::StringViewHash>
       uris_owned_by_registry;
-  for (util::string_view uri : registry->Uris()) {
-    uris_owned_by_registry.insert(uri);
+  for (std::pair<Id, util::string_view>  uri : registry->Uris()) {
+    uris_owned_by_registry.insert(uri.second);
   }
 
   for (auto& uri : uris) {
-    if (uri.empty()) continue;
-    auto it = uris_owned_by_registry.find(uri);
+    if (uri.second.empty()) continue;
+    auto it = uris_owned_by_registry.find(uri.second);
     if (it == uris_owned_by_registry.end()) {
       return Status::KeyError("Uri '", uri, "' not found in registry");
     }
-    uri = *it;  // Ensure uris point into the registry's memory
-    set.impl_->AddUri(*it, &set);
+    // uri = *it;  // Ensure uris point into the registry's memory
+    set.impl_->AddUri(uri.first, *it, &set);
   }
 
   if (type_ids.size() != type_is_variation.size()) {
@@ -253,7 +253,7 @@ ExtensionIdRegistry* default_extension_id_registry() {
       }
     }
 
-    std::vector<util::string_view> Uris() const override {
+    std::unordered_map<Id,util::string_view> Uris() const override {
       return {uris_.begin(), uris_.end()};
     }
 

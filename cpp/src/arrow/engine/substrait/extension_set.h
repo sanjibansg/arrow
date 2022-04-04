@@ -46,14 +46,14 @@ namespace engine {
 /// instance).
 class ARROW_ENGINE_EXPORT ExtensionIdRegistry {
  public:
-  /// All uris registered in this ExtensionIdRegistry
-  virtual std::vector<util::string_view> Uris() const = 0;
-
   struct Id {
     util::string_view uri, name;
 
     bool empty() const { return uri.empty() && name.empty(); }
   };
+
+  /// All uris registered in this ExtensionIdRegistry
+  virtual std::unordered_map<Id, util::string_view> Uris() const = 0;
 
   /// \brief A mapping between a Substrait ID and an arrow::DataType
   struct TypeRecord {
@@ -158,14 +158,14 @@ class ARROW_ENGINE_EXPORT ExtensionSet {
   /// An extension set should instead be created using
   /// arrow::engine::GetExtensionSetFromPlan
   static Result<ExtensionSet> Make(
-      std::vector<util::string_view> uris, std::vector<Id> type_ids,
+      std::unordered_map<Id,util::string_view> uris, std::vector<Id> type_ids,
       std::vector<bool> type_is_variation, std::vector<Id> function_ids,
       ExtensionIdRegistry* = default_extension_id_registry());
 
   // index in these vectors == value of _anchor/_reference fields
   /// TODO(ARROW-15583) this assumes that _anchor/_references won't be huge, which is not
   /// guaranteed. Could it be?
-  const std::vector<util::string_view>& uris() const { return uris_; }
+  const std::unordered_map<Id,util::string_view>& uris() const { return uris_; }
 
   /// \brief Returns a data type given an anchor
   ///
@@ -226,7 +226,7 @@ class ARROW_ENGINE_EXPORT ExtensionSet {
  private:
   ExtensionIdRegistry* registry_;
   /// The subset of extension registry URIs referenced by this extension set
-  std::vector<util::string_view> uris_;
+  std::unordered_map<Id,util::string_view> uris_;
   std::vector<TypeRecord> types_;
 
   std::vector<FunctionRecord> functions_;
