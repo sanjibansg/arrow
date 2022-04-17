@@ -59,7 +59,7 @@ class ARROW_EXPORT SourceNodeOptions : public ExecNodeOptions {
 
   std::shared_ptr<Schema> output_schema;
   std::function<Future<util::optional<ExecBatch>>()> generator;
-  int64_t batch_size = 32768;
+  int64_t exec_batch_size = 32768;
 };
 
 /// \brief An extended Source node which accepts a table
@@ -74,7 +74,7 @@ class ARROW_EXPORT TableSourceNodeOptions : public ExecNodeOptions {
   // If the table is larger the node will emit multiple batches from the
   // the table to be processed in parallel.
   int64_t max_batch_size;
-  int64_t partition_batch_size = 32768;
+  int64_t exec_batch_size = 32768;
 };
 
 /// \brief Make a node which excludes some rows from batches passed through it

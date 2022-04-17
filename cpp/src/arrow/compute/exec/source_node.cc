@@ -47,33 +47,27 @@ namespace {
 
 struct MorselBatchPipelineTask {
   void operator()() {
-    auto Partition = [](const ExecBatch& batch, int64_t batch_size) {
-      int64_t batch_index = 0;
-      std::vector<ExecBatch> batches;
-      while (batch_index < batch.length) {
-        batches.push_back(batch.Slice(batch_index, batch_index + batch_size));
-        batch_index += batch_size;
-      }
-      return batches;
-    };
-    for (const auto& batch : Partition(morsel, batch_size)) {
-      start_node->InputReceived(target_node, batch);
+      int64_t row_index = 0;
+      while (row_index < morsel.length) {
+        ExecBatch batch = morsel.Slice(row_index, row_index + exec_batch_size);
+        start_node->InputReceived(target_node, batch);
+        row_index += exec_batch_size;
     }
   }
   ExecNode* start_node;
   ExecNode* target_node;
   ExecBatch morsel;
-  int64_t batch_size;
+  int64_t exec_batch_size;
 };
 
 struct SourceNode : ExecNode {
   SourceNode(ExecPlan* plan, std::shared_ptr<Schema> output_schema,
              AsyncGenerator<util::optional<ExecBatch>> generator,
-             int64_t batch_size = 32768)
+             int64_t exec_batch_size = 32768)
       : ExecNode(plan, {}, {}, std::move(output_schema),
                  /*num_outputs=*/1),
         generator_(std::move(generator)),
-        batch_size(batch_size) {}
+        exec_batch_size(exec_batch_size) {}
 
   static Result<ExecNode*> Make(ExecPlan* plan, std::vector<ExecNode*> inputs,
                                 const ExecNodeOptions& options) {
@@ -81,7 +75,7 @@ struct SourceNode : ExecNode {
     const auto& source_options = checked_cast<const SourceNodeOptions&>(options);
     return plan->EmplaceNode<SourceNode>(plan, source_options.output_schema,
                                          source_options.generator,
-                                         source_options.batch_size);
+                                         source_options.exec_batch_size);
   }
 
   const char* kind_name() const override { return "SourceNode"; }
@@ -143,14 +137,14 @@ struct SourceNode : ExecNode {
                   auto status =
                       task_group_.AddTask([this, executor, batch]() -> Result<Future<>> {
                         return executor->Submit(MorselBatchPipelineTask{
-                            outputs_[0], this, batch, batch_size});
+                            outputs_[0], this, batch, exec_batch_size});
                       });
                   if (!status.ok()) {
                     outputs_[0]->ErrorReceived(this, std::move(status));
                     return Break(total_batches);
                   }
                 } else {
-                  MorselBatchPipelineTask{outputs_[0], this, batch, batch_size}();
+                  MorselBatchPipelineTask{outputs_[0], this, batch, exec_batch_size}();
                 }
                 return Continue();
               },
@@ -197,14 +191,14 @@ struct SourceNode : ExecNode {
   int batch_count_{0};
   util::AsyncTaskGroup task_group_;
   AsyncGenerator<util::optional<ExecBatch>> generator_;
-  int64_t batch_size;
+  int64_t exec_batch_size;
 };
 
 struct TableSourceNode : public SourceNode {
   TableSourceNode(ExecPlan* plan, std::shared_ptr<Table> table, int64_t batch_size,
-                  int64_t partition_batch_size)
+                  int64_t exec_batch_size)
       : SourceNode(plan, table->schema(), TableGenerator(*table, batch_size),
-                   partition_batch_size) {}
+                   exec_batch_size) {}
 
   static Result<ExecNode*> Make(ExecPlan* plan, std::vector<ExecNode*> inputs,
                                 const ExecNodeOptions& options) {
@@ -212,12 +206,12 @@ struct TableSourceNode : public SourceNode {
     const auto& table_options = checked_cast<const TableSourceNodeOptions&>(options);
     const auto& table = table_options.table;
     const int64_t batch_size = table_options.max_batch_size;
-    const int64_t partition_batch_size = table_options.partition_batch_size;
+    const int64_t exec_batch_size = table_options.exec_batch_size;
 
     RETURN_NOT_OK(ValidateTableSourceNodeInput(table, batch_size));
 
     return plan->EmplaceNode<TableSourceNode>(plan, table, batch_size,
-                                              partition_batch_size);
+                                              exec_batch_size);
   }
 
   const char* kind_name() const override { return "TableSourceNode"; }
