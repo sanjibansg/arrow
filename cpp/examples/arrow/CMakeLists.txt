@@ -23,6 +23,7 @@ endif()
 
 if(ARROW_ENGINE)
   add_arrow_example(engine_substrait_consumption EXTRA_LINK_LIBS arrow_engine_shared)
+  add_arrow_example(engine_substrait_csv_consumption EXTRA_LINK_LIBS arrow_engine_shared)
 endif()
 
 if(ARROW_COMPUTE AND ARROW_CSV)

@@ -630,7 +630,7 @@ if(DEFINED ENV{ARROW_SUBSTRAIT_URL})
   set(SUBSTRAIT_SOURCE_URL "$ENV{ARROW_SUBSTRAIT_URL}")
 else()
   set_urls(SUBSTRAIT_SOURCE_URL
-           "https://github.com/substrait-io/substrait/archive/${ARROW_SUBSTRAIT_BUILD_VERSION}.tar.gz"
+           "https://github.com/sanjibansg/substrait/archive/${ARROW_SUBSTRAIT_BUILD_VERSION}.tar.gz"
   )
 endif()
 
@@ -1637,12 +1637,11 @@ macro(build_substrait)
 
   set(SUBSTRAIT_PROTOS
       capabilities
-      expression
+      algebra
       extensions/extensions
       function
       parameterized_types
       plan
-      relations
       type
       type_expressions)
 

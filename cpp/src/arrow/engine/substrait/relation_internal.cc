@@ -19,6 +19,8 @@
 
 #include "arrow/compute/api_scalar.h"
 #include "arrow/compute/exec/options.h"
+#include "arrow/csv/options.h"
+#include "arrow/dataset/file_csv.h"
 #include "arrow/dataset/file_ipc.h"
 #include "arrow/dataset/file_parquet.h"
 #include "arrow/dataset/plan.h"
@@ -97,19 +99,67 @@ Result<compute::Declaration> FromProto(const substrait::Rel& rel,
               "substrait::ReadRel::LocalFiles::FileOrFiles with "
               "path_type other than uri_file");
         }
+        
+        if (item.has_csv_options()){
+              std::shared_ptr<dataset::CsvFileFormat> csv_format;
+              csv::ParseOptions parse_options;
+              parse_options.delimiter = item.csv_options().parse_options().delimiter().front();
+              parse_options.quoting = item.csv_options().parse_options().quoting();
+              parse_options.quote_char = item.csv_options().parse_options().quote_char().front();
+              parse_options.double_quote = item.csv_options().parse_options().double_quote();
+              parse_options.escaping = item.csv_options().parse_options().escaping();
+              parse_options.escape_char = item.csv_options().parse_options().escape_char().front();
+              parse_options.newlines_in_values = item.csv_options().parse_options().newlines_in_values();
+              parse_options.ignore_empty_lines = item.csv_options().parse_options().ignore_empty_lines();
 
-        if (item.format() ==
-            substrait::ReadRel::LocalFiles::FileOrFiles::FILE_FORMAT_PARQUET) {
-          format = std::make_shared<dataset::ParquetFileFormat>();
-        } else if (util::string_view{item.uri_file()}.ends_with(".arrow")) {
-          format = std::make_shared<dataset::IpcFileFormat>();
-        } else if (util::string_view{item.uri_file()}.ends_with(".feather")) {
-          format = std::make_shared<dataset::IpcFileFormat>();
+              csv_format->parse_options = parse_options;
+              format = std::dynamic_pointer_cast<dataset::FileFormat>(csv_format);
+
+              std::shared_ptr<dataset::CsvFragmentScanOptions> fragment_csv_scan_options;
+              fragment_csv_scan_options->read_options.use_threads = !(item.csv_options().read_options().no_use_threads());
+              fragment_csv_scan_options->read_options.block_size = item.csv_options().read_options().block_size();
+              fragment_csv_scan_options->read_options.skip_rows = item.csv_options().read_options().skip_rows();
+              fragment_csv_scan_options->read_options.skip_rows_after_names = item.csv_options().read_options().skip_rows_after_names();
+              for(const auto& column_name : item.csv_options().read_options().column_names()){
+                fragment_csv_scan_options->read_options.column_names.emplace_back(column_name);
+              }
+              fragment_csv_scan_options->read_options.autogenerate_column_names = item.csv_options().read_options().autogenerate_column_names();
+
+              fragment_csv_scan_options->convert_options.check_utf8 = !(item.csv_options().convert_options().ignore_check_utf8());
+              for(const auto& null_value : item.csv_options().convert_options().null_values()){
+                fragment_csv_scan_options->convert_options.null_values.emplace_back(null_value);
+              }
+              for(const auto& true_value : item.csv_options().convert_options().true_values()){
+                fragment_csv_scan_options->convert_options.true_values.emplace_back(true_value);
+              }
+              for(const auto& false_value : item.csv_options().convert_options().false_values()){
+                fragment_csv_scan_options->convert_options.false_values.emplace_back(false_value);
+              }              
+              fragment_csv_scan_options->convert_options.strings_can_be_null = item.csv_options().convert_options().strings_can_be_null();
+              fragment_csv_scan_options->convert_options.quoted_strings_can_be_null = !(item.csv_options().convert_options().quoted_strings_cannot_be_null());
+              fragment_csv_scan_options->convert_options.auto_dict_encode = item.csv_options().convert_options().auto_dict_encode();
+              fragment_csv_scan_options->convert_options.auto_dict_max_cardinality = item.csv_options().convert_options().auto_dict_max_cardinality();
+              fragment_csv_scan_options->convert_options.decimal_point = item.csv_options().convert_options().decimal_point().front();
+              for(const auto& include_column : item.csv_options().convert_options().include_columns()){
+                fragment_csv_scan_options->convert_options.include_columns.emplace_back(include_column);
+              }   
+              fragment_csv_scan_options->convert_options.include_missing_columns = item.csv_options().convert_options().include_missing_columns();
+              scan_options->fragment_scan_options = std::dynamic_pointer_cast<dataset::FragmentScanOptions>(fragment_csv_scan_options);
+
         } else {
-          return Status::NotImplemented(
-              "substrait::ReadRel::LocalFiles::FileOrFiles::format "
-              "other than FILE_FORMAT_PARQUET");
-        }
+          if (item.format() ==
+              substrait::ReadRel::LocalFiles::FileOrFiles::FILE_FORMAT_PARQUET) {
+            format = std::make_shared<dataset::ParquetFileFormat>();
+          } else if (util::string_view{item.uri_file()}.ends_with(".arrow")) {
+            format = std::make_shared<dataset::IpcFileFormat>();
+          } else if (util::string_view{item.uri_file()}.ends_with(".feather")) {
+            format = std::make_shared<dataset::IpcFileFormat>();
+          } else {
+            return Status::NotImplemented(
+                "substrait::ReadRel::LocalFiles::FileOrFiles::format "
+                "other than FILE_FORMAT_PARQUET");
+          }
+      }
 
         if (!util::string_view{item.uri_file()}.starts_with("file:///")) {
           return Status::NotImplemented(
